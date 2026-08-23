@@ -64,21 +64,21 @@ if __name__=="__main__":
             # usamos json para manejar los datos
             data = json.load(file)
             # Extraemos el nombre desde el JSON (si no existe, usa un valor por defecto)
-            nombre_usuario = data.get("nombre", "Coni e Isi")
-            print(f"usuario activo: {nombre_usuario}")
+            usuario = data.get("user", "NO se encontro nombre")
+            print(f"usuario activo: {usuario}")
     except Exception as e:
         print(f"error al abrir o leer el archivo JSON: {e}")
         sys.exit(1)
 
-    new_socket_address = ('10.0.2.15', 8000)
+    socket_address = ('10.0.2.15', 8000)
     # armamos el socket
     # los parámetros que recibe el socket indican el tipo de conexión
     # socket.SOCK_STREAM = socket orientado a conexión
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) #esto sirve para que si cortmaos la conexion e intentamos reanudarla no pida esperar segundos
     # le indicamos al server socket que debe atender peticiones en la dirección address
+
     # para ello usamos bind
-    server_socket.bind(new_socket_address)
+    server_socket.bind(socket_address)
  
     # luego con listen (función de sockets de python) le decimos que puede
     # tener hasta 3 peticiones de conexión encoladas
@@ -97,45 +97,108 @@ if __name__=="__main__":
                 continue
 
             parsed_request = parse_HTTP_message(request_bytes)
+            host = parsed_request.get('headers').get('Host')
             print(f"Petición recibida: {parsed_request.get('metodo')} en {parsed_request.get('path')}")
+            #parte 2 punto 2
+            path = parsed_request.get('path')
+            bloqueados= data.get('blocked')
+            print(bloqueados)
+            print(host)
+            print(host+path) 
+            path_limpio = path.replace("http://", "")
+            print(path_limpio)
+            bloqueo=False
+            for i in data.get('blocked'):
+                if i in path:
+                    bloqueo = True
+                    break
 
-            html_content = (
-                "<!DOCTYPE html>\n"
-                "<html>\n"
-                "<head>\n"
-                "    <meta charset=\"UTF-8\">\n"
-                "    <title>Servidor HTTP de Coni e Isi c:</title>\n"
-                "<body>\n"
-                "  <h1>HOLAAAA somos Coni e Isi c:</h1>\n"
-                "  <p>Respuesta generada correctamente usando create_HTTP_message.</p>\n"
-                "</body>\n"
-                "</html>"
-            ).encode("utf-8")
 
 
-            #se arma estructura de response basado en la salida de curl
-            response_data ={
-                "metodo": "HTTP/1.1",
-                "path": "200",
-                "version": "OK",
-                "headers":{
-                    "Content-Type": "text/html; charset=utf-8",
-                    "Content-Length": str(len(html_content)),
-                    "X-ElQuePregunta": "nombre", #aca no se
-                    "Connection": "close"
-                },
-                "body": html_content
-            }
+            if "jpg" in path:
+                #sacar lo q hay entre el / y el jpg
+                with open("adara.jpg", "rb") as imagen:
+                    message = imagen.read()
 
+
+            elif bloqueo:
+                print ("esta bloqueado")
+                html_content = (
+                    "<!DOCTYPE html>\n"
+                    "<html>\n"
+                    "<head>\n"
+                    "    <meta charset=\"UTF-8\">\n"
+                    "    <title>Servidor HTTP de Coni e Isi c:</title>\n"
+                    "<body>\n"
+                    "  <h1>ERROR 403: PÁGINA BLOQUEADA >:C </h1>\n"
+                    "  <img src= '/adara.jpg'> \n"
+                    "</body>\n"
+                    "</html>"
+                ).encode("utf-8")
+
+
+                #se arma estructura de response basado en la salida de curl
+                response_data ={
+                    "metodo": "HTTP/1.1",
+                    "path": "200",
+                    "version": "OK",
+                    "headers":{
+                        "Content-Type": "text/html; charset=utf-8",
+                        "Content-Length": str(len(html_content)),
+                        "X-ElQuePregunta": usuario, #aca no se
+                        "Connection": "close"
+                    },
+                    "body": html_content
+                }
+                #------------------------------------------
+                #Cremaos  los bytes usadno funcion
+                message = create_HTTP_message(response_data)
+
+            #elif "jpg" in path:
+            #    #sacar lo q hay entre el / y el jpg
+            #    with open("adara.jpg", "rb") as imagen:
+            #        message = imagen.read()
+
+            else:
+                socket_address_client=(host, 80)
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                print(f"se crea socket cliente : {client_socket}")
+                 
+                # Como es un socket orientado a conexión debemos conectarlo a la dirección acordada
+                client_socket.connect(socket_address_client)
+                print("se conectó")
+                client_socket.send(request_bytes)
+                print("se envio")
+                buffer_size = 1024
+                message = client_socket.recv(4096)
+                print("se recibe")
+                client_socket.close()
+
+
+            
+
+
+
+
+            #----------------------------------------------------------
+            #para despues
+            
+            #------------------------------------------
             #Cremaos  los bytes usadno funcion
-            response_bytes = create_HTTP_message(response_data)
+            
             #enviamos al cliente y cerramos
-            new_socket.sendall(response_bytes)
+
+            #-----conexion con servidor--------
+           
+            #-----conexion con servidor---------
+
+            new_socket.sendall(message)
             new_socket.close()
 
     except KeyboardInterrupt:
             print("\nServidor detenido.")
     finally:
+        
         server_socket.close()
 
         

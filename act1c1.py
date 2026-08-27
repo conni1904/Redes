@@ -29,7 +29,7 @@ def parse_HTTP_message(http_message: bytes):
         "path": path,
         "version": version,
         "headers": headers,
-        "body": body #no esta decodificado...
+        "body": body 
     }
 
 def create_HTTP_message(parsed_data: dict):
@@ -52,12 +52,29 @@ def create_HTTP_message(parsed_data: dict):
     #retornamos mensaje en bytes
     return http_mesage
 
+
+# Función que recibe todo el contenido del request
+def receive_full_request(connection_socket, buffer_size):
+    message = connection_socket.recv(buffer_size)
+    while not ("\r\n\r\n" in message.decode()):
+        message += connection_socket.recv(buffer_size)
+    return message
+
+# Función que recibe todo el contenido del response
+def receive_full_response(connection_socket, buffer_size): 
+    message = connection_socket.recv(buffer_size)
+    while not ("</html>" in message.decode()):
+        message += connection_socket.recv(buffer_size)
+    return message
+
+
 if __name__=="__main__":
-    #lo del archivo json deberia ir aca ....
+    # Se reciben argumentos
     if len(sys.argv) < 2:
         print("error argumentos")
         sys.exit(1)
 
+    #Se abre archivo json
     json_path = sys.argv[1]
     try:
         with open(json_path) as file:
@@ -70,28 +87,19 @@ if __name__=="__main__":
         print(f"error al abrir o leer el archivo JSON: {e}")
         sys.exit(1)
 
+    #Se crea socket 
     socket_address = ('10.0.2.15', 8000)
-    # armamos el socket
-    # los parámetros que recibe el socket indican el tipo de conexión
-    # socket.SOCK_STREAM = socket orientado a conexión
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # le indicamos al server socket que debe atender peticiones en la dirección address
-
-    # para ello usamos bind
     server_socket.bind(socket_address)
- 
-    # luego con listen (función de sockets de python) le decimos que puede
-    # tener hasta 3 peticiones de conexión encoladas
-    # si recibiera una 4ta petición de conexión la va a rechazar
     server_socket.listen(3)
     print('... Esperando clientes')
     try:
         while True:
-            # cuando llega una petición de conexión la aceptamos
-            # y se crea un nuevo socket que se comunicará con el cliente
+            # Cuando la petición se crea nuevo socket de comunicación
+            buffer_size=64
             new_socket, new_socket_address = server_socket.accept()
-            # Recibimos la request del navegador /esto es sacado de gemini
-            request_bytes = new_socket.recv(4096)
+            request_bytes = receive_full_request(new_socket,buffer_size)
+            #request_bytes = new_socket.recv(4096) #aca deberia cambiarse por la nueva funcion para recibir todo el mensaje
             if not request_bytes:
                 new_socket.close()
                 continue
@@ -99,28 +107,24 @@ if __name__=="__main__":
             parsed_request = parse_HTTP_message(request_bytes)
             host = parsed_request.get('headers').get('Host')
             print(f"Petición recibida: {parsed_request.get('metodo')} en {parsed_request.get('path')}")
-            #parte 2 punto 2
+            #2.2 Se revisa si el path de la página está bloqueado
             path = parsed_request.get('path')
             bloqueados= data.get('blocked')
-            print(bloqueados)
-            print(host)
-            print(host+path) 
-            path_limpio = path.replace("http://", "")
-            print(path_limpio)
             bloqueo=False
-            for i in data.get('blocked'):
+
+            for i in bloqueados:
                 if i in path:
                     bloqueo = True
                     break
 
-
-
+            #Petición para archivo jpg local 
             if "jpg" in path:
                 #sacar lo q hay entre el / y el jpg
-                with open("adara.jpg", "rb") as imagen:
+                with open("gatitus.jpg", "rb") as imagen: #aca creo que es necesario agregar un response (pq igual es una peticion)
                     message = imagen.read()
 
 
+            #Si esta bloqueado devuelve el siguiente html por defecto
             elif bloqueo:
                 print ("esta bloqueado")
                 html_content = (
@@ -131,7 +135,7 @@ if __name__=="__main__":
                     "    <title>Servidor HTTP de Coni e Isi c:</title>\n"
                     "<body>\n"
                     "  <h1>ERROR 403: PÁGINA BLOQUEADA >:C </h1>\n"
-                    "  <img src= '/adara.jpg'> \n"
+                    "  <img src= '/gatitus.jpg'> \n"
                     "</body>\n"
                     "</html>"
                 ).encode("utf-8")
@@ -140,8 +144,8 @@ if __name__=="__main__":
                 #se arma estructura de response basado en la salida de curl
                 response_data ={
                     "metodo": "HTTP/1.1",
-                    "path": "200",
-                    "version": "OK",
+                    "path": "403",
+                    "version": "Forbidden",
                     "headers":{
                         "Content-Type": "text/html; charset=utf-8",
                         "Content-Length": str(len(html_content)),
@@ -154,43 +158,47 @@ if __name__=="__main__":
                 #Cremaos  los bytes usadno funcion
                 message = create_HTTP_message(response_data)
 
-            #elif "jpg" in path:
-            #    #sacar lo q hay entre el / y el jpg
-            #    with open("adara.jpg", "rb") as imagen:
-            #        message = imagen.read()
 
+            #Caso en que página no está bloqueada
             else:
                 socket_address_client=(host, 80)
                 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 print(f"se crea socket cliente : {client_socket}")
                  
-                # Como es un socket orientado a conexión debemos conectarlo a la dirección acordada
+                # Agregamos el header de "X-ElQuePregunta" a la solicitud
                 client_socket.connect(socket_address_client)
                 print("se conectó")
-                client_socket.send(request_bytes)
+                request_original = parse_HTTP_message(request_bytes)
+                request_original["headers"]["X-ElQuePregunta"] = "Coni e Isi c:"
+                request=create_HTTP_message(request_original)
+                client_socket.send(request)
                 print("se envio")
-                buffer_size = 1024
-                message = client_socket.recv(4096)
+
+                #Reemplazo de palabras prohibidas a la respuesta
+                buffer_size = 256
+                message_original = receive_full_response(client_socket,buffer_size)
+                message_dict = parse_HTTP_message(message_original) 
+                body_original = message_dict.get("body").decode("utf-8")
+
+                forbidden_words= data.get("forbidden_words")
+                
+                for dic in forbidden_words:
+                    for x, y in dic.items():
+                        body_original = body_original.replace(x,y)
+
+
+                message_dict["body"]= body_original.encode()
+                message_dict["headers"]["Content-Length"] = len(body_original)+1
+                print(message_dict)
+                message = create_HTTP_message(message_dict)
+                variable= message.decode()
+                print(variable)
+
+
                 print("se recibe")
                 client_socket.close()
 
 
-            
-
-
-
-
-            #----------------------------------------------------------
-            #para despues
-            
-            #------------------------------------------
-            #Cremaos  los bytes usadno funcion
-            
-            #enviamos al cliente y cerramos
-
-            #-----conexion con servidor--------
-           
-            #-----conexion con servidor---------
 
             new_socket.sendall(message)
             new_socket.close()

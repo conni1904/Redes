@@ -118,9 +118,9 @@ if __name__=="__main__":
                     break
 
             #Petición para archivo jpg local 
-            if "jpg" in path:
+            if "png" in path:
                 #sacar lo q hay entre el / y el jpg
-                with open("gatitus.jpg", "rb") as imagen: #aca creo que es necesario agregar un response (pq igual es una peticion)
+                with open("gatitus.png", "rb") as imagen: #aca creo que es necesario agregar un response (pq igual es una peticion)
                     message = imagen.read()
 
 

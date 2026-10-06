@@ -1,20 +1,164 @@
 import socket
+import random
 
 class SocketTCP:
     def __init__(self):
-        self.socketudp = None
+        self.socketudp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.dir_destino = None
         self.num_secuencia = None
 
+    def bind(self, adress):
+        self.socketudp.bind(adress)
+
+    def connect(self, adress):
+        self.dir_destino = adress
+        dictionary= {}
+        dictionary["ack"] = 0
+        dictionary["syn"]= 1
+        dictionary["fin"]= 0
+        dictionary["seq"]= random.randint(0, 100)
+        dictionary["datos"]= "".encode()
+        head = create_segment(dictionary)
+        self.num_secuencia= dictionary["seq"]
+        self.socketudp.sendto(head, adress)
+        print("Pidiendo conexión...")
+        message, adress2 = self.socketudp.recvfrom(7)
+        mensaje = parse_segment(message)
+        if mensaje["syn"] == 1 and mensaje["ack"] == 1 and mensaje["seq"] == self.num_secuencia + 1:
+            dictionary= {}
+            dictionary["ack"] = 1
+            dictionary["syn"]= 0
+            dictionary["fin"]= 0
+            dictionary["seq"]= mensaje["seq"] +1 
+            dictionary["datos"]= "".encode()
+            head = create_segment(dictionary)
+            self.num_secuencia= dictionary["seq"]
+            self.socketudp.sendto(head, adress)
+            print("Cliente recibe confirmación...")
+
+    def accept(self):
+        message, adress = self.socketudp.recvfrom(7)
+        mensaje = parse_segment(message)
+        if mensaje["syn"] == 1:
+            dictionary= {}
+            dictionary["ack"] = 1
+            dictionary["syn"]= 1
+            dictionary["fin"]= 0
+            dictionary["seq"]= mensaje["seq"] + 1 
+            dictionary["datos"]= "".encode()
+            head = create_segment(dictionary)
+            self.num_secuencia= dictionary["seq"]
+            self.socketudp.sendto(head, adress)
+            print("Servidor lo recibió...")
+            message, adress = self.socketudp.recvfrom(7)
+            mensaje = parse_segment(message)
+            if mensaje["ack"] == 1 and mensaje["seq"] == self.num_secuencia + 1:
+                newSocket = SocketTCP()
+                newSocket.num_secuencia = mensaje["seq"]
+                newSocket.dir_destino = adress
+                newSocket_adress = newSocket.socketudp.getsockname()
+                newSocket.bind(newSocket.dir_destino)
+                print(newSocket_adress)
+                return [newSocket, newSocket_adress]
+
+    def send(self, message):
+        dictionary = {}
+        dictionary["ack"] = 0
+        dictionary["syn"]= 0
+        dictionary["fin"]= 0
+        dictionary["seq"]= self.num_secuencia
+        dictionary["datos"]= len(message).to_bytes()
+        head = create_segment(dictionary)
+        adress = ('0.0.0.0', 0)
+        print(self.dir_destino)
+        self.socketudp.sendto(head, adress)
+        try:
+            self.socketudp.settimeout(0.5)
+            # comentario
+            response, adress3 = self.socketudp.recvfrom(7)
+            print("primer recv")
+            respuesta = parse_segment(response)
+            if respuesta["ack"] == 1 and respuesta["seq"] == self.num_secuencia + 1:
+                self.num_secuencia = respuesta["seq"] + 1
+                if len(message)%16 == 0:
+                    bloque = len(message)/16
+                else:
+                    bloque = int(len(message)/16) + 1
+                for i in range(bloque):
+                    dic = {}
+                    dic["ack"]= 0
+                    dic["syn"]= 0
+                    dic["fin"]= 0
+                    dic["seq"]= self.num_secuencia
+                    dic["datos"]= message[i * 16 : (i + 1) * 16].encode('utf-8')
+                    segmento = create_segment(dic)
+                    while True:
+                        try:
+                            self.socketudp.sendto(segmento, self.dir_destino)
+                            self.socketudp.settimeout(0.5)
+                            response, adress3 = self.socketudp.recvfrom(7)
+                            respuesta = parse_segment(response)
+                            if respuesta["ack"] == 1 and respuesta["seq"] == self.num_secuencia + 1:
+                                self.num_secuencia = respuesta["seq"] +1
+                                break
+                        except:
+                            print(f"Reenviando sección {i}")
+                   
+        except:
+            print("fallo al enviar")
+            self.send(message)
+
+
+        
+    def recv (self, buffer_size):
+        largo_mensaje = 0
+        response, adress = self.socketudp.recvfrom(8)
+        print("recibe largo ")
+        respuesta = parse_segment(response)
+        largo_mensaje = respuesta["datos"].from_bytes()
+        self.num_secuencia = respuesta["seq"] + 1
+        mensaje = "".encode()
+
+        while len(mensaje) != largo_mensaje:
+            valido = False
+            while not valido:
+                dic = {}
+                dic["ack"]= 1
+                dic["syn"]= 0
+                dic["fin"]= 0
+                dic["seq"]= self.num_secuencia
+                dic["datos"]= "".encode()
+                head = create_segment(dic)
+                self.socketudp.sendto(head, self.dir_destino)
+                print("envia ack")
+                response, adress = self.socketudp.recvfrom(23)
+                print(mensaje.decode())
+                respuesta = parse_segment(response)
+                if respuesta["seq"] == self.num_secuencia + 1:
+                    mensaje += respuesta["datos"]
+                    valido = True
+                    self.num_secuencia = respuesta["seq"] + 1
+
+
+
+
+
+
+
+
+                            
+
+
+
+
+
+
+
 def parse_segment(segment):
     dictionary = {}
-    dictionary["ack"]= segment[0]
-    print(segment[0])  #pasarlo de bytes a int
-    print(type(segment[0])) 
+    dictionary["ack"]= segment[0]  
     dictionary["syn"]=segment[1]
-    print(segment[1])
     dictionary["fin"]= segment[2]
-    print(segment[2])
     dictionary["seq"]= int.from_bytes(segment[3:7])
     dictionary["datos"]= segment[7:]
     return dictionary
@@ -28,4 +172,4 @@ def create_segment(dicti):
     
     return ack+syn+fin+seq+datos
 
-        
+         

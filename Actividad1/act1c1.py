@@ -95,11 +95,10 @@ if __name__=="__main__":
     print('... Esperando clientes')
     try:
         while True:
-            # Cuando la petición se crea nuevo socket de comunicación
+            # Cuando la petición se recibe, se crea nuevo socket de comunicación
             buffer_size=64
             new_socket, new_socket_address = server_socket.accept()
             request_bytes = receive_full_request(new_socket,buffer_size)
-            #request_bytes = new_socket.recv(4096) #aca deberia cambiarse por la nueva funcion para recibir todo el mensaje
             if not request_bytes:
                 new_socket.close()
                 continue
@@ -117,12 +116,10 @@ if __name__=="__main__":
                     bloqueo = True
                     break
 
-            #Petición para archivo jpg local 
+            #Petición para archivo png local para páginas bloqueadas 
             if "png" in path:
-                #sacar lo q hay entre el / y el jpg
-                with open("gatitus.png", "rb") as imagen: #aca creo que es necesario agregar un response (pq igual es una peticion)
+                with open("gatitus.png", "rb") as imagen:
                     message = imagen.read()
-
 
             #Si esta bloqueado devuelve el siguiente html por defecto
             elif bloqueo:
@@ -140,7 +137,6 @@ if __name__=="__main__":
                     "</html>"
                 ).encode("utf-8")
 
-
                 #se arma estructura de response basado en la salida de curl
                 response_data ={
                     "metodo": "HTTP/1.1",
@@ -149,15 +145,14 @@ if __name__=="__main__":
                     "headers":{
                         "Content-Type": "text/html; charset=utf-8",
                         "Content-Length": str(len(html_content)),
-                        "X-ElQuePregunta": usuario, #aca no se
+                        "X-ElQuePregunta": usuario,
                         "Connection": "close"
                     },
                     "body": html_content
                 }
                 #------------------------------------------
-                #Cremaos  los bytes usadno funcion
+                #Creamos mensaje usando nuestra función 
                 message = create_HTTP_message(response_data)
-
 
             #Caso en que página no está bloqueada
             else:
@@ -194,11 +189,8 @@ if __name__=="__main__":
                 variable= message.decode()
                 print(variable)
 
-
                 print("se recibe")
                 client_socket.close()
-
-
 
             new_socket.sendall(message)
             new_socket.close()
@@ -206,7 +198,6 @@ if __name__=="__main__":
     except KeyboardInterrupt:
             print("\nServidor detenido.")
     finally:
-        
         server_socket.close()
 
         

@@ -18,7 +18,7 @@ class SocketTCP:
         dictionary["ack"] = 0
         dictionary["syn"]= 1
         dictionary["fin"]= 0
-        dictionary["seq"]= random.randint(0, 100)
+        dictionary["seq"]= 1 #random.randint(0, 100)
         dictionary["datos"]= "".encode()
         head = create_segment(dictionary)
         self.num_secuencia= dictionary["seq"]
@@ -76,14 +76,14 @@ class SocketTCP:
                     mensaje = parse_segment(message)
                     #caso que se recibe ultimo ack normal
                     if mensaje["ack"] == 1 and mensaje["seq"] == self.num_secuencia + 1:
-                        newSocket.num_secuencia = mensaje["seq"] +1
+                        newSocket.num_secuencia = self.num_secuencia
                         newSocket.dir_destino = adress
                         ack_recibido = True
                         print("recibio el ultimo ack")
 
                     #Caso feo
                     elif mensaje["ack"] == 0 and mensaje["syn"] == 0 and mensaje["fin"] == 0:
-                        newSocket.num_secuencia = mensaje["seq"] - 1
+                        newSocket.num_secuencia = self.num_secuencia
                         newSocket.dir_destino = adress
                         newSocket.buffer_acumulado += message
                         print("se perdio el ultimo ack y se envian datosss")
@@ -102,10 +102,11 @@ class SocketTCP:
         dictionary["ack"] = 0
         dictionary["syn"]= 0
         dictionary["fin"]= 0
-        dictionary["seq"]= self.num_secuencia
+        dictionary["seq"]= self.num_secuencia + 1
         dictionary["datos"]= len(message).to_bytes(2)
         head = create_segment(dictionary)
         self.socketudp.sendto(head, self.dir_destino) 
+        self.num_secuencia = dictionary["seq"]
         print(f"largo de mensaje a enviar: {len(message)}") 
         print(f"primer numero de secuencia: {self.num_secuencia}") 
         try:
@@ -157,7 +158,7 @@ class SocketTCP:
                 respuesta = parse_segment(response)
                 print(f"respuesta secuencia: {respuesta['seq']}")
                 print(f"self secuencia: {self.num_secuencia}")
-                if respuesta["seq"] == self.num_secuencia + 1: #respuesta apropiada
+                if respuesta["seq"] == self.num_secuencia + 2: #respuesta apropiada
                     break
                 print("recibió basura...")
                 dic = {}
@@ -170,7 +171,7 @@ class SocketTCP:
                 self.socketudp.sendto(head, self.dir_destino)
 
             print("recibe largo ")
-            largo_mensaje = int.from_bytes(respuesta["datos"])
+            largo_mensaje = int.from_bytes(respuesta["datos"][:2])
             print(f"Largo mensaje original: {largo_mensaje}")
             print(respuesta["datos"].decode())
             print(respuesta["seq"])

@@ -12,13 +12,20 @@ class SocketTCP:
         self.socketudp.bind(adress)
 
     def connect(self, adress):
-        syn = {"ack": 0, "syn": 1, "fin": 0, "seq": random.randint(0,100), "datos": b""}
+        syn = {}
+        syn["ack"] = 0
+        syn["syn"] = 1
+        syn["fin"] = 0
+        syn["seq"] = random.randint(0,100)
+        syn["datos"] = "".encode()
         self.num_secuencia = syn["seq"]
         self.socketudp.settimeout(0.5)
+
         while True:
             try:
                 self.socketudp.sendto(create_segment(syn), adress)
                 message, adress2 = self.socketudp.recvfrom(1024)
+
             except socket.timeout:
                 print("Se perdió el SYN o el SYN-ACK, reenviando...")
                 continue
@@ -32,12 +39,15 @@ class SocketTCP:
         self.dir_destino = (adress2[0], puerto)
         self.num_secuencia = mensaje["seq"] + 1
 
-        ack = {"ack": 1, "syn": 0, "fin": 0,
-            "seq": self.num_secuencia, "datos": b""}
+        ack = {}
+        ack["ack"] = 1
+        ack["syn"] = 0
+        ack["fin"] = 0
+        ack["seq"] = self.num_secuencia
+        ack["datos"] = "".encode()
         self.socketudp.sendto(create_segment(ack), adress)
+
             
-
-
     def accept(self):
         self.socketudp.settimeout(None)
         while True:
@@ -51,14 +61,18 @@ class SocketTCP:
         puerto = newSocket.socketudp.getsockname()[1]
         newSocket_adress = (self.socketudp.getsockname()[0], puerto)
 
-        synack = {"ack": 1, "syn": 1, "fin": 0,
-                "seq": mensaje["seq"] + 1, "datos": puerto.to_bytes(2, "big")}
+        synack = {}
+        synack["ack"] =1
+        synack["syn"] =1
+        synack["fin"] =0
+        synack["seq"] = mensaje["seq"] + 1
+        synack["datos"] = puerto.to_bytes(2, "big")
         head = create_segment(synack)
 
         while True:
             self.socketudp.sendto(head, adress)
 
-            # turno 1: ACK normal, llega al socket de escucha
+            #ACK normal, llega al socket de escucha
             self.socketudp.settimeout(0.25)
             try:
                 message, adress_cli = self.socketudp.recvfrom(1024)
@@ -69,7 +83,7 @@ class SocketTCP:
             except socket.timeout:
                 pass
 
-            # turno 2: caso feo, el ACK se perdió y el cliente ya mandó datos
+            # caso feo, el ACK se perdió y el cliente ya mandó datos
             newSocket.socketudp.settimeout(0.25)
             try:
                 message, adress_cli = newSocket.socketudp.recvfrom(1024)
@@ -120,17 +134,17 @@ class SocketTCP:
     def recv(self, buffer_size):
         if len(self.buffer_acumulado) == 0:
             largo_mensaje = None
-            mensaje = b""
+            mensaje = "".encode
             while largo_mensaje is None or len(mensaje) < largo_mensaje:
                 response, _ = self.socketudp.recvfrom(1024)
                 respuesta = parse_segment(response)
 
-                if respuesta["seq"] == self.num_secuencia + 1:      # segmento nuevo
+                if respuesta["seq"] == self.num_secuencia + 1:
                     if largo_mensaje is None:
                         largo_mensaje = int.from_bytes(respuesta["datos"][:2], "big")
                     else:
                         mensaje += respuesta["datos"]
-                    self.num_secuencia = respuesta["seq"] + 1       # seq del ACK
+                    self.num_secuencia = respuesta["seq"] + 1
 
                 # nuevo o duplicado: siempre se responde con el último ACK
                 dic = {}
@@ -138,7 +152,7 @@ class SocketTCP:
                 dic["syn"] = 0
                 dic["fin"] = 0
                 dic["seq"] = self.num_secuencia
-                dic["datos"] = b""
+                dic["datos"] = "".encode
                 self.socketudp.sendto(create_segment(dic), self.dir_destino)
 
             self.buffer_acumulado = mensaje
@@ -150,7 +164,12 @@ class SocketTCP:
 
     def close(self):
         seq_fin = self.num_secuencia + 1
-        fin = {"ack": 0, "syn": 0, "fin": 1, "seq": seq_fin, "datos": b""}
+        fin = {}
+        fin["ack"] = 0
+        fin["syn"] = 0
+        fin["fin"] = 1
+        fin["seq"] =seq_fin
+        fin["datos"] = "".encode
         segmento_fin = create_segment(fin)
 
         self.socketudp.settimeout(0.5)
@@ -173,13 +192,17 @@ class SocketTCP:
 
         if recibido:
             self.num_secuencia = seq_fin + 1
-            ack = {"ack": 1, "syn": 0, "fin": 0,
-                "seq": self.num_secuencia + 1, "datos": b""}
+            ack= {}
+            ack["ack"]= 1
+            ack["syn"]= 0
+            ack["fin"]=0
+            ack["seq"]= self.num_secuencia + 1
+            ack["datos"]= "".encode()
             segmento_ack = create_segment(ack)
             for i in range(3):
                 self.socketudp.sendto(segmento_ack, self.dir_destino)
                 try:
-                    self.socketudp.recvfrom(1024)   # espera hasta un timeout
+                    self.socketudp.recvfrom(1024)
                 except socket.timeout:
                     pass
         else:
@@ -197,12 +220,20 @@ class SocketTCP:
             if mensaje["fin"] == 1 and mensaje["seq"] == self.num_secuencia + 1:
                 break
             # duplicado de datos: se perdió nuestro último ACK, se reenvía
-            dic = {"ack": 1, "syn": 0, "fin": 0,
-                "seq": self.num_secuencia, "datos": b""}
+            dic = {}
+            dic["ack"] = 1
+            dic["syn"] = 0
+            dic["fin"] = 0
+            dic["seq"] = self.num_secuencia
+            dic["datos"] = "".encode()
             self.socketudp.sendto(create_segment(dic), self.dir_destino)
 
-        fin_ack = {"ack": 1, "syn": 0, "fin": 1,
-                "seq": mensaje["seq"] + 1, "datos": b""}
+        fin_ack = {}
+        fin_ack["ack"] = 1
+        fin_ack["syn"] = 0
+        fin_ack["fin"] = 1
+        fin_ack["seq"] = mensaje["seq"] + 1
+        fin_ack["datos"] = "".encode()
         self.num_secuencia = fin_ack["seq"]
         segmento = create_segment(fin_ack)
 
@@ -230,7 +261,6 @@ class SocketTCP:
             print("recv_close: no llegó el ACK final, se asume que la otra parte cerró")
         self.socketudp.close()
         print("Terminó conexión")
-
 
 
 def parse_segment(segment):

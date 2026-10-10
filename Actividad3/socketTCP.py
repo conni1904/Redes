@@ -24,7 +24,7 @@ class SocketTCP:
         while True:
             try:
                 self.socketudp.sendto(create_segment(syn), adress)
-                message, adress2 = self.socketudp.recvfrom(1024)
+                message, adress2 = self.socketudp.recvfrom(23)
 
             except socket.timeout:
                 print("Se perdió el SYN o el SYN-ACK, reenviando...")
@@ -51,7 +51,7 @@ class SocketTCP:
     def accept(self):
         self.socketudp.settimeout(None)
         while True:
-            message, adress = self.socketudp.recvfrom(1024)
+            message, adress = self.socketudp.recvfrom(23)
             mensaje = parse_segment(message)
             if mensaje["syn"] == 1 and mensaje["ack"] == 0:
                 break
@@ -75,7 +75,7 @@ class SocketTCP:
             #ACK normal, llega al socket de escucha
             self.socketudp.settimeout(0.25)
             try:
-                message, adress_cli = self.socketudp.recvfrom(1024)
+                message, adress_cli = self.socketudp.recvfrom(23)
                 m = parse_segment(message)
                 if (m["syn"] == 0 and m["ack"] == 1
                         and m["seq"] == synack["seq"] + 1):
@@ -86,7 +86,7 @@ class SocketTCP:
             # caso feo, el ACK se perdió y el cliente ya mandó datos
             newSocket.socketudp.settimeout(0.25)
             try:
-                message, adress_cli = newSocket.socketudp.recvfrom(1024)
+                message, adress_cli = newSocket.socketudp.recvfrom(23)
                 m = parse_segment(message)
                 if m["syn"] == 0 and m["ack"] == 0 and m["fin"] == 0:
                     break
@@ -121,7 +121,7 @@ class SocketTCP:
             while True:
                 self.socketudp.sendto(segmento, self.dir_destino)
                 try:
-                    response, _ = self.socketudp.recvfrom(1024)
+                    response, _ = self.socketudp.recvfrom(23)
                 except socket.timeout:
                     print("Reenviando segmento...")
                     continue
@@ -134,9 +134,9 @@ class SocketTCP:
     def recv(self, buffer_size):
         if len(self.buffer_acumulado) == 0:
             largo_mensaje = None
-            mensaje = "".encode
+            mensaje = "".encode()
             while largo_mensaje is None or len(mensaje) < largo_mensaje:
-                response, _ = self.socketudp.recvfrom(1024)
+                response, _ = self.socketudp.recvfrom(23)
                 respuesta = parse_segment(response)
 
                 if respuesta["seq"] == self.num_secuencia + 1:
@@ -152,7 +152,7 @@ class SocketTCP:
                 dic["syn"] = 0
                 dic["fin"] = 0
                 dic["seq"] = self.num_secuencia
-                dic["datos"] = "".encode
+                dic["datos"] = "".encode()
                 self.socketudp.sendto(create_segment(dic), self.dir_destino)
 
             self.buffer_acumulado = mensaje
@@ -169,7 +169,7 @@ class SocketTCP:
         fin["syn"] = 0
         fin["fin"] = 1
         fin["seq"] =seq_fin
-        fin["datos"] = "".encode
+        fin["datos"] = "".encode()
         segmento_fin = create_segment(fin)
 
         self.socketudp.settimeout(0.5)
@@ -180,7 +180,7 @@ class SocketTCP:
             try:
                 # se ignoran segmentos que no sean el FIN+ACK esperado
                 while True:
-                    response, _ = self.socketudp.recvfrom(1024)
+                    response, _ = self.socketudp.recvfrom(23)
                     respuesta = parse_segment(response)
                     if (respuesta["ack"] == 1 and respuesta["fin"] == 1
                             and respuesta["seq"] == seq_fin + 1):
@@ -202,7 +202,7 @@ class SocketTCP:
             for i in range(3):
                 self.socketudp.sendto(segmento_ack, self.dir_destino)
                 try:
-                    self.socketudp.recvfrom(1024)
+                    self.socketudp.recvfrom(23)
                 except socket.timeout:
                     pass
         else:
@@ -215,7 +215,7 @@ class SocketTCP:
     def recv_close(self):
         self.socketudp.settimeout(None)
         while True:
-            message, _ = self.socketudp.recvfrom(1024)
+            message, _ = self.socketudp.recvfrom(23)
             mensaje = parse_segment(message)
             if mensaje["fin"] == 1 and mensaje["seq"] == self.num_secuencia + 1:
                 break
@@ -244,7 +244,7 @@ class SocketTCP:
             self.socketudp.sendto(segmento, self.dir_destino)
             try:
                 while True:
-                    message, _ = self.socketudp.recvfrom(1024)
+                    message, _ = self.socketudp.recvfrom(23)
                     m = parse_segment(message)
                     if (m["ack"] == 1 and m["fin"] == 0
                             and m["seq"] == self.num_secuencia + 1):

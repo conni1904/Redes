@@ -19,18 +19,20 @@ class CongestionControl:
                 self.current_state = 1
                 self.primer_timeout = False
         else:
-            self.cwnd += (1/self.get_MSS_in_cwnd())
+            self.cwnd += (1/self.get_MSS_in_cwnd()) * self.mss
 
     def event_timeout(self):
         if self.current_state == 0:
             if self.primer_timeout == False:
                 self.primer_timeout = True
-                self.ssthresh = self.cwnd / 2
+                self.ssthresh = int(self.cwnd / 2)
             self.cwnd = self.mss
         else:
             self.current_state = 0
+            
+            self.ssthresh = int(self.cwnd / 2)
             self.cwnd = self.mss
-            self.ssthresh = self.cwnd / 2
+
 
     def is_state_slow_start(self):
         return (self.current_state == 0)
@@ -41,3 +43,7 @@ class CongestionControl:
 
     def get_ssthresh(self):
         return self.ssthresh
+
+            
+
+

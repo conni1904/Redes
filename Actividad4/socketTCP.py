@@ -1,6 +1,6 @@
 import socket
 from socketUDP import SocketUDP 
-from slidingWindowCC import SlidingWindowCC
+from Actividad4.slidingWindowCC import SlidingWindowCC
 import random
 from threading import Timer
 from CongestionControl import CongestionControl
@@ -11,6 +11,11 @@ class SocketTCP:
         self.dir_destino = None
         self.num_secuencia = None
         self.buffer_acumulado = b""
+        self.congestion_controler_on = False
+        self.number_of_segment = 0 
+
+    def setter(self, nuevo_valor):
+        self.congestion_controler_on = nuevo_valor
 
 
     def divide_message(self, message, tamano):
@@ -18,8 +23,6 @@ class SocketTCP:
         for i in range(0, len(message), tamano):
             lista.append(message[i:i + tamano])
         return lista
-
-
 
 
     def wrap_data_as_segment(self, data, seq):
@@ -40,7 +43,6 @@ class SocketTCP:
             return True
         else:
             return False
-
 
 
     def bind(self, adress):
@@ -73,7 +75,6 @@ class SocketTCP:
         puerto = int.from_bytes(mensaje["datos"][:2])
         self.dir_destino = (adress2[0], puerto)
         self.num_secuencia = mensaje["seq"] + 1
-
         ack = {}
         ack["ack"] = 1
         ack["syn"] = 0
@@ -81,7 +82,7 @@ class SocketTCP:
         ack["seq"] = self.num_secuencia
         ack["datos"] = "".encode()
         self.socketudp.socket_udp.sendto(create_segment(ack), adress)
-
+        self.socketudp.socket_udp.settimeout(0.0)
             
     def accept(self):
         self.socketudp.socket_udp.settimeout(None)
@@ -109,7 +110,6 @@ class SocketTCP:
             self.socketudp.socket_udp.sendto(head, adress)
 
             #ACK normal, llega al socket de escucha
-            
             try:
                 message, adress_cli = self.socketudp.socket_udp.recvfrom(23)
                 m = parse_segment(message)
@@ -132,18 +132,15 @@ class SocketTCP:
         newSocket.num_secuencia = synack["seq"] + 1   
         newSocket.dir_destino = adress_cli
 
-        self.socketudp.socket_udp.settimeout(None)
-        newSocket.socketudp.socket_udp.settimeout(None)
+        self.socketudp.socket_udp.settimeout(0.0)
+        newSocket.socketudp.socket_udp.settimeout(0.0)
         return [newSocket, newSocket_adress]
-
 
     def send(self, message, mode="stop_and_wait"):
         if mode == "stop_and_wait":
             self.send_using_stop_and_wait(message)
         elif mode == "go_back_n":
             self.send_using_go_back_n(message)
-
-
 
     def send_using_stop_and_wait(self, message):
         # el primer trozo es el largo, los siguientes son el mensaje en pedazos de 16
@@ -175,48 +172,54 @@ class SocketTCP:
                         break
 
     def send_using_go_back_n(self, message):
-        data_list = self.divide_message(message, 16)
+        print("--------------------------")
+        print("inicio del send")
+        congestion_controler = CongestionControl(8)
+
+        data_list = self.divide_message(message, 8)
         initial_seq = self.num_secuencia + 1
         
-        data_to_send = SlidingWindowCC(8, data_list, initial_seq)
-      
+        if self.congestion_controler_on:
+            window_size = congestion_controler.get_MSS_in_cwnd()
+            
+        else:
+            window_size = 8
+        data_window= SlidingWindowCC(window_size,data_list, initial_seq)
+
+        print(data_window)
+        if congestion_controler.get_MSS_in_cwnd() == 1:
+            print("valor de window size = 1")
         
-        wnd_index = 0
         self.socketudp.set_timer_list_length(1)
         self.socketudp.settimeout(0.5)
         siguiente= 0
         while True:
             #Para enviar todo lo que se pueda de la ventana
-            while siguiente < 8 and data_to_send.get_data(siguiente) is not None:
+            while siguiente < window_size and data_window.get_data(siguiente) is not None:
                 
-                current_data = data_to_send.get_data(siguiente)
-                current_seq = data_to_send.get_sequence_number(siguiente)
+                current_data = data_window.get_data(siguiente)
+                current_seq = data_window.get_sequence_number(siguiente)
                 current_segment = self.wrap_data_as_segment(current_data, current_seq)
+                print(f"se envia current data: {current_data.decode()} con numero de seq: {current_seq}")
                 
-                #primero de la ventana marca el tiempo
-                if siguiente == 0:
-                    self.socketudp.sendto(current_segment, self.dir_destino, timer_index=0)
-                #los siguientes solo se envian
-                else:
-                    self.socketudp.sendto(current_segment, self.dir_destino) 
+                
+                self.socketudp.sendto(current_segment, self.dir_destino, timer_index=0)
+                self.number_of_segment += 1
                 siguiente += 1
             
-            if data_to_send.get_data(0) is None:
-                
+            if data_window.get_data(0) is None:
                 break  
+
             try:
                 answer, address = self.socketudp.recvfrom(23)
                 respuesta = parse_segment(answer)
                 
-
                 if respuesta["ack"] ==1:
-                    
-
+                    print(f"se recibe ack con num seq: {respuesta["seq"]}")
                     #los pasos que avanza en caso de perder el ack
                     pasos = 0 
-                    for i in range(8):
-                        secuencia_i = data_to_send.get_sequence_number(i)
-                        
+                    for i in range(window_size):
+                        secuencia_i = data_window.get_sequence_number(i)
                         if secuencia_i is not None and respuesta["seq"] >= secuencia_i:
                             pasos +=1
                         else:
@@ -224,33 +227,42 @@ class SocketTCP:
                    
                     if pasos > 0:
                         self.socketudp.stop_timer(timer_index=0) # solo hay un timer
-                        data_to_send.move_window(pasos)
+                        data_window.move_window(pasos)
                         self.num_secuencia = respuesta["seq"]
                         siguiente -= pasos
-                        if data_to_send.get_data(0) is not None:
-                            
-                            self.socketudp.timer_list[0] = Timer(self.socketudp.timeout, self.socketudp._time_up_function, args=(0,))
-
-                            
+                        if siguiente > 0:
+                            self._restart_timer()
+                        
+                        if self.congestion_controler_on:
+                            congestion_controler.event_ack_received()
+                            window_size = congestion_controler.get_MSS_in_cwnd()
+                            data_window.update_window_size(window_size)
+                            print(f"nuevo window size por ack: {window_size}")
+                            if (congestion_controler.is_state_slow_start):
+                                print("esta en slow start")
+                            else:
+                                print("esta en congestion avoidance")
 
             except TimeoutError:
                 ("reenviando ventana")
-                self.socketudp.stop_timer(timer_index=0)
+                if self.congestion_controler_on:
+                    congestion_controler.event_timeout()
+                    window_size = congestion_controler.get_MSS_in_cwnd()
+                    data_window.update_window_size(window_size)
+                    print(f"nuevo window size por timeout: {window_size}")
+                    if (congestion_controler.is_state_slow_start):
+                        print("esta en slow start")
+                    else:
+                        print("esta en congestion avoidance")
+
+                if self.socketudp.timer_list[0] is not None:
+                    self.socketudp.stop_timer(0)
+                                  
                 siguiente=0
 
-        try:
-            self.socketudp.stop_timer(0)
-        except:
-            pass
         print("send terminado")
 
-        
-        
-        
-
-
-
-        
+     
     def recv(self, buff_size, mode="stop_and_wait"):
         if mode == "stop_and_wait":
             return self.recv_using_stop_and_wait(buff_size)
@@ -269,6 +281,7 @@ class SocketTCP:
                 if respuesta["seq"] == self.num_secuencia + 1:
                     if largo_mensaje is None:
                         largo_mensaje = int.from_bytes(respuesta["datos"][:2], "big")
+                        
                     else:
                         mensaje += respuesta["datos"]
                     self.num_secuencia = respuesta["seq"] + 1
@@ -290,48 +303,52 @@ class SocketTCP:
 
     
     def recv_using_go_back_n(self, buffer_size):
+        print("----------------------")
+        print("inicia recived")
         if len(self.buffer_acumulado) == 0:
             largo_mensaje = None
             mensaje = "".encode()
-            largo_anterior = -1
+            largo_anterior = 0
             while largo_mensaje is None or len(mensaje) < largo_mensaje:
                 response, _ = self.socketudp.recvfrom(23)
                 respuesta = parse_segment(response)
-                
+
+                print(f"respuesta seq: {respuesta['seq']}")
+                print(f"num secuencia: {self.num_secuencia}")
                
-        
                 if respuesta["seq"]== self.num_secuencia +1 and largo_mensaje is None:
                     largo_mensaje = int(respuesta["datos"].decode())
                     self.num_secuencia = respuesta["seq"]
-                
-                elif respuesta["seq"] == self.num_secuencia + largo_anterior:
+                    print(f"largo de mensaje {largo_mensaje}")
+                    largo_anterior = len(respuesta["datos"])
+                elif respuesta["seq"] == self.num_secuencia + largo_anterior and largo_mensaje is not None:
+                    print("entra en el elif")
                 
                     mensaje += respuesta["datos"]
                     self.num_secuencia = respuesta["seq"]
+                    largo_anterior = len(respuesta["datos"])
 
-               
-                largo_anterior = len(respuesta["datos"])
+                print(f"largo anterior {largo_anterior}")
                 # nuevo o duplicado: siempre se responde con el último ACK
                 dic = {}
                 dic["ack"] = 1
                 dic["syn"] = 0
                 dic["fin"] = 0
                 dic["seq"] = self.num_secuencia
+                print(f"se envia ack con numero seq:{dic['seq']}")
                 dic["datos"] = "".encode()
-                self.socketudp.settimeout(60.0)
-                self.socketudp.sendto(create_segment(dic), self.dir_destino)
+                self.socketudp.socket_udp.sendto(create_segment(dic), self.dir_destino)
             
-                
-
-                
             self.buffer_acumulado = mensaje
         retorno = self.buffer_acumulado[:buffer_size]
         self.buffer_acumulado = self.buffer_acumulado[buffer_size:]
+        print("termina recived")
         return retorno
 
 
-
     def close(self):
+        print("----------------------------")
+        print("inicia close")
         seq_fin = self.num_secuencia + 1
         fin = {}
         fin["ack"] = 0
@@ -345,23 +362,22 @@ class SocketTCP:
         timeouts = 0
         recibido = False
         while timeouts < 3 and not recibido:
-            self.socketudp.sendto(segmento_fin, self.dir_destino)
+            self.socketudp.socket_udp.sendto(segmento_fin, self.dir_destino)
             try:
                 # se ignoran segmentos que no sean el FIN+ACK esperado
                 while True:
 
-                    response, _ = self.socketudp.recvfrom(23)
+                    response, _ = self.socketudp.socket_udp.recvfrom(23)
                     respuesta = parse_segment(response)
                     if (respuesta["ack"] == 1 and respuesta["fin"] == 1
                             and respuesta["seq"] == seq_fin + 1):
                         recibido = True
                         break
-            except socket.timeout:
+            except :
                 timeouts += 1
                 print(" reenviando FIN...")
        
         if recibido:
-           
             self.num_secuencia = seq_fin + 1
             ack= {}
             ack["ack"]= 1
@@ -373,11 +389,11 @@ class SocketTCP:
 
             
             for i in range(3):
-               
+                print("enviando ack final")
                 self.socketudp.socket_udp.sendto(segmento_ack, self.dir_destino)
                 try:
-                    self.socketudp.recvfrom(23)
-                except socket.timeout:
+                    self.socketudp.socket_udp.recvfrom(23)
+                except:
                     
                     self.socketudp.socket_udp.settimeout(0.5)
                     pass
@@ -389,15 +405,12 @@ class SocketTCP:
 
 
     def recv_close(self):
-        self.socketudp.settimeout(None)
-
-        try:
-            self.socketudp.stop_timer(0)
-        except:
-            pass
+        print("---------------------------")
+        print("inicia recv close")
+        self.socketudp.socket_udp.settimeout(None)
 
         while True:
-            message, _ = self.socketudp.recvfrom(23)
+            message, _ = self.socketudp.socket_udp.recvfrom(23)
             mensaje = parse_segment(message)
             if mensaje["fin"] == 1 and mensaje["seq"] == self.num_secuencia + 1:
                 break
@@ -409,7 +422,7 @@ class SocketTCP:
             dic["seq"] = self.num_secuencia
             dic["datos"] = "".encode()
             self.socketudp.socket_udp.sendto(create_segment(dic), self.dir_destino)
-
+        print("se recivio FIN")
         fin_ack = {}
         fin_ack["ack"] = 1
         fin_ack["syn"] = 0
@@ -419,14 +432,14 @@ class SocketTCP:
         self.num_secuencia = fin_ack["seq"]
         segmento = create_segment(fin_ack)
 
-        self.socketudp.settimeout(0.5)
+        self.socketudp.socket_udp.settimeout(0.5)
         timeouts = 0
         ack_final = False
         while timeouts < 3 and not ack_final:
             self.socketudp.socket_udp.sendto(segmento, self.dir_destino)
             try:
                 while True:
-                    message, _ = self.socketudp.recvfrom(23)
+                    message, _ = self.socketudp.socket_udp.recvfrom(23)
                     m = parse_segment(message)
                     if (m["ack"] == 1 and m["fin"] == 0
                             and m["seq"] == self.num_secuencia + 1):
@@ -435,16 +448,14 @@ class SocketTCP:
                     if m["fin"] == 1:
                         # el cliente reenvió el FIN: se perdió nuestro FIN+ACK
                         self.socketudp.socket_udp.sendto(segmento, self.dir_destino)
-            except socket.timeout:
+            except :
                 timeouts += 1
                 print("reenviando FIN+ACK...")
 
         if not ack_final:
             print("recv_close: no llegó el ACK final, se asume que la otra parte cerró")
-        self.socketudp.close()
+        self.socketudp.socket_udp.close()
         print("Terminó conexión")
-
-    
 
 
 def parse_segment(segment):

@@ -10,7 +10,7 @@ class CongestionControl:
         return self.cwnd
 
     def get_MSS_in_cwnd(self):
-        return self.get_cwnd()//self.mss #REVISAR
+        return int(self.get_cwnd()//self.mss )
 
     def event_ack_received(self):
         if self.current_state == 0: #si estamos en slow start
@@ -43,7 +43,3 @@ class CongestionControl:
 
     def get_ssthresh(self):
         return self.ssthresh
-
-            
-
-

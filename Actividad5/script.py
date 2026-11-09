@@ -4,7 +4,7 @@ import socket
 
 
 if __name__=="__main__":
-    if (len(sys.argv) < 4):
+    if (len(sys.argv) < 5): #recibe : ip final, puerto final, mensaje, puerto de inicio por ahora...
         print("error")
         sys.exit(1)
 
@@ -18,8 +18,9 @@ if __name__=="__main__":
     dic["ip_d"] = int(ip[3])
     paquete = router.create_packet(dic)
 
+
     socket_client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    socket_adress = ('127.0.0.1', 8881) #asumimos que siempre se iniciara desde el router 1.....
+    socket_adress = ('127.0.0.1', int(sys.argv[4])) #asumimos que siempre se iniciara desde el router 1.....
     socket_client.sendto(paquete, socket_adress)
     socket_client.close()
 

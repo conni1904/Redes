@@ -1,6 +1,8 @@
 import sys
 import socket
 
+contador_visitas = 0
+hay_ruta = False
 
 def parse_packet(IP_packet: bytes):
     dictionary = {}
@@ -25,12 +27,23 @@ def create_packet(parsed_IP_packet):
 
 
 def check_routes(routes_file_name: str, destination_address: tuple[str, int])-> tuple[str, int]:
+    global contador_visitas
+    global hay_ruta
     with open(routes_file_name, 'r') as file:
         contenido = file.read()
+    contador = 1
     for linea in contenido.splitlines():
         palabras = linea.split()
         if (destination_address[0] in palabras[0]) and (int(palabras[1]) <= destination_address[1] <= int(palabras[2])):
-            return (palabras[3], int(palabras[4]))
+            hay_ruta = True
+            if contador == contador_visitas:
+                return (palabras[3], int(palabras[4]))  
+            contador += 1
+    if hay_ruta:
+        print("reiniciando rutas")
+        contador_visitas = 1
+        return check_routes(routes_file_name,destination_address)
+        
 
 
 
@@ -65,25 +78,26 @@ if __name__=="__main__":
     socket_router = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     socket_router.bind(socket_address)
 
-   
-    buffer_size = 1024
-    message, address = socket_router.recvfrom(buffer_size)
-    mensaje_par = parse_packet(message)
-    ip = str(mensaje_par["ip_a"]) + "." +str(mensaje_par["ip_b"]) +"."+ str(mensaje_par["ip_c"])+ "." +str(mensaje_par["ip_d"])
-    if (socket_address[0] == ip) and (socket_address[1] == mensaje_par["puerto"]): 
-        print(f" Mensaje: {(mensaje_par["mensaje"]).decode()}")
+    while True:
+        buffer_size = 1024
+        message, address = socket_router.recvfrom(buffer_size)
+        contador_visitas +=1
+        mensaje_par = parse_packet(message)
+        ip = str(mensaje_par["ip_a"]) + "." +str(mensaje_par["ip_b"]) +"."+ str(mensaje_par["ip_c"])+ "." +str(mensaje_par["ip_d"])
+        if (socket_address[0] == ip) and (socket_address[1] == mensaje_par["puerto"]): 
+            print(f" Mensaje: {(mensaje_par["mensaje"]).decode()}")
 
-    else:
-        nueva_dir = check_routes(sys.argv[3], (ip, mensaje_par["puerto"]))
-        if nueva_dir == None:
-            print(f"No hay rutas hacia ({ip}, {mensaje_par['puerto']}) para paquete [paquete_ip]")
         else:
-            print(f"redirigiendo paquete [paquete_ip] con destino final ({ip}, {mensaje_par['puerto']}) desde ({socket_address[0]}, {socket_address[1]}) hacia {nueva_dir}")
-            
-            socket_router.sendto(message,nueva_dir)
+            nueva_dir = check_routes(sys.argv[3], (ip, mensaje_par["puerto"]))
+            if nueva_dir == None:
+                print(f"No hay rutas hacia ({ip}, {mensaje_par['puerto']}) para paquete [paquete_ip]")
+            else:
+                print(f"redirigiendo paquete [paquete_ip] con destino final ({ip}, {mensaje_par['puerto']}) desde ({socket_address[0]}, {socket_address[1]}) hacia {nueva_dir}")
+                
+                socket_router.sendto(message,nueva_dir)
 
     socket_router.close()
-        
+            
 
 
     
